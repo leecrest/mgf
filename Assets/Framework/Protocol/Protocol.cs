@@ -13,7 +13,7 @@ public class Protocol {
 	{
 		public string _name;
 	}
-	public delegate byte[] PtoWriter(ref PtoBase data);
+	public delegate bool PtoWriter(ref PtoBase data, ref BinaryWriter bw);
 	private Dictionary<string, ushort> m_Name2ID;
 	private Dictionary<ushort, PtoWriter> m_Writers;
 	public delegate PtoBase PtoReader(ref byte[] buff, ushort pos, ushort len);
@@ -78,14 +78,13 @@ public class Protocol {
         return true;
     }
 
-	public bool WritePacket(PtoBase data)
+	public byte[] WritePacket(PtoBase data, ref BinaryWriter bw)
 	{
-		if (!m_Name2ID.ContainsKey(data._name)) return false;
+		if (!m_Name2ID.ContainsKey(data._name)) return null;
         ushort ptoID = m_Name2ID[data._name];
-		if (!m_Writers.ContainsKey(ptoID)) return false;
-		byte[] buff = m_Writers[ptoID](ref data);
-		if (buff == null) return false;
-
+		if (!m_Writers.ContainsKey(ptoID)) return null;
+		byte[] buff = m_Writers[ptoID](ref data, ref bw);
+		if (buff == null) return null;
 		return Packet.Pack(ptoID, buff);
 	}
 
@@ -106,15 +105,17 @@ public class Protocol {
 		public string m_username;
 		public string m_password;
 
-		public void Read(ref BinaryReader br) {
+		public bool Read(ref BinaryReader br) {
 			m_checkSum = br.ReadByte();
 			m_username = br.ReadString();
 			m_password = br.ReadString();
+			return true;
 		}
-		public void Write(ref BinaryWriter bw) {
+		public bool Write(ref BinaryWriter bw) {
 			bw.Write(m_checkSum);
 			bw.Write(m_username);
 			bw.Write(m_password);
+			return true;
 		}
 	}
 	public delegate void Delegate_c2s_login_version(ref T_c2s_login_version t);
@@ -126,12 +127,10 @@ public class Protocol {
 		t.Read(ref br);
 		return t;
 	}
-	public byte[] Writer_c2s_login_version(ref PtoBase data) {
+	public bool Writer_c2s_login_version(ref PtoBase data, ref BinaryWriter bw) {
 		T_c2s_login_version t = (T_c2s_login_version)data;
-		byte[] buff = new byte[CLIENT_WRITE_BUFF_MAX];
-		BinaryWriter bw = new BinaryWriter(new MemoryStream(buff));
 		t.Write(ref bw);
-		return buff;
+		return true;
 	}
 
 
@@ -140,19 +139,21 @@ public class Protocol {
 		public byte m_msg;
 		public List<string> m_args = new List<string>();
 
-		public void Read(ref BinaryReader br) {
+		public bool Read(ref BinaryReader br) {
 			m_msg = br.ReadByte();
 			ushort size = ReadArraySize(ref br);
 			for (ushort i = 0; i < size; i++) {
 				m_args.Add(br.ReadString());
 			}
+			return true;
 		}
-		public void Write(ref BinaryWriter bw) {
+		public bool Write(ref BinaryWriter bw) {
 			bw.Write(m_msg);
 			WriteArraySize(ref bw, (uint)m_args.Count);
 			foreach (var item in m_args) {
 				bw.Write(item);
 			}
+			return true;
 		}
 	}
 	public delegate void Delegate_s2c_login_error(ref T_s2c_login_error t);
@@ -164,12 +165,10 @@ public class Protocol {
 		t.Read(ref br);
 		return t;
 	}
-	public byte[] Writer_s2c_login_error(ref PtoBase data) {
+	public bool Writer_s2c_login_error(ref PtoBase data, ref BinaryWriter bw) {
 		T_s2c_login_error t = (T_s2c_login_error)data;
-		byte[] buff = new byte[CLIENT_WRITE_BUFF_MAX];
-		BinaryWriter bw = new BinaryWriter(new MemoryStream(buff));
 		t.Write(ref bw);
-		return buff;
+		return true;
 	}
 
 }

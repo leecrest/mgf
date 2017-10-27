@@ -1,5 +1,6 @@
 using UnityEngine;
 using System;
+using System.Collections;
 using System.Collections.Generic;
 using System.Net.Sockets;
 using System.Net;
@@ -30,7 +31,7 @@ public class NetMgr : MgrBase
         public ushort size;
     }
 
-    private EnNetState m_enNetState;
+    private EnNetState m_State;
     private Socket m_Socket;
     private IPEndPoint m_Address;
     private int m_AddrPort;
@@ -45,12 +46,11 @@ public class NetMgr : MgrBase
     private int m_WriteSize;
     private Queue<Protocol.PtoBase> m_WriteQueue;
     private Queue<Protocol.PtoBase> m_ReadQueue;
-    private Queue<SocketException> m_ErrorQueue;
     private object m_Lock = new object();
 
     public override void Init()
     {
-        m_enNetState = EnNetState.Lost;
+        m_State = EnNetState.Lost;
         m_Socket = new Socket(AddressFamily.InterNetwork, SocketType.Stream, ProtocolType.Tcp);
         m_bStopRun = false;
         m_Protocol = new Protocol();
@@ -62,7 +62,8 @@ public class NetMgr : MgrBase
 
         m_WriteQueue = new Queue<Protocol.PtoBase>();
         m_ReadQueue = new Queue<Protocol.PtoBase>();
-        m_ErrorQueue = new Queue<SocketException>();
+
+        StartNet("127.0.0.1", 1000, false);
     }
 
     public void StartNet(string ip, int port, bool bNewThread)
@@ -71,12 +72,10 @@ public class NetMgr : MgrBase
         m_NewThread = bNewThread;
         if (m_NewThread)
         {
-            m_Thread = new Thread(new ThreadStart(LoopThread))
-            {
-                IsBackground = true
-            };
+            m_Thread = new Thread(new ThreadStart(LoopThread));
+            m_Thread.IsBackground = true;
         }
-        StartCoroutine("CoConnect");
+        StartCoroutine(CoConnect());
     }
 
     public override void UnInit()
@@ -96,10 +95,6 @@ public class NetMgr : MgrBase
             {
                 OnSocketWrite();
             }
-            if (m_Socket.Poll(-1, SelectMode.SelectError))
-            {
-                OnSocketError(null);
-            }
         }
     }
 
@@ -112,10 +107,6 @@ public class NetMgr : MgrBase
         if (m_Socket.Poll(50, SelectMode.SelectWrite))
         {
             OnSocketWrite();
-        }
-        if (m_Socket.Poll(50, SelectMode.SelectError))
-        {
-            OnSocketError(null);
         }
     }
 
@@ -188,11 +179,6 @@ public class NetMgr : MgrBase
         if (m_NewThread) Monitor.Exit(m_WriteQueue);
     }
 
-    private void OnSocketError(SocketException ex)
-    {
-        m_ErrorQueue.Enqueue(ex);
-    }
-
     public void ConnectSync()
     {
         m_ConnectSync = true;
@@ -243,7 +229,7 @@ public class NetMgr : MgrBase
     {
         if (buff == null) return;
         if (m_NewThread) Monitor.Enter(m_WriteQueue);
-        m_WriteQueue.Enqueue(buff);
+        //m_WriteQueue.Enqueue(buff);
         if (m_NewThread) Monitor.Exit(m_WriteQueue);
     }
 
@@ -280,19 +266,6 @@ public class NetMgr : MgrBase
         }
     }
 
-    public void HandleError()
-    {
-        if (m_ErrorQueue.Count == 0)
-        {
-            return;
-        }
-        SocketException ex = null;
-        if (m_NewThread) Monitor.Enter(m_ErrorQueue);
-        ex = m_ErrorQueue.Dequeue();
-        if (m_NewThread) Monitor.Exit(m_ErrorQueue);
-        OnError(ex);
-    }
-
     public void Close()
     {
         m_bStopRun = true;
@@ -323,7 +296,6 @@ public class NetMgr : MgrBase
 
     void OnError(SocketException ex)
 	{
-        m_enNetState = EnNetState.Lost;
         Debug.LogWarning("NetMgr:OnError");
         //Globals.It.UIMgr.StopWaiting();
         //Globals.It.UIMgr.ShowMsgBox("连接服务器失败，请稍后再试");
@@ -332,7 +304,7 @@ public class NetMgr : MgrBase
 
     void OnDisconnected()
 	{
-        m_enNetState = EnNetState.Lost;
+        m_State = EnNetState.Lost;
 		Debug.LogWarning("NetMgr:OnDisconnected");
         //Globals.It.UIMgr.ShowMsgBox("连接服务器失败，请稍后再试", "为什么");
         //Globals.It.LogicMgr.OnServerDisconnected();
@@ -340,7 +312,7 @@ public class NetMgr : MgrBase
 
     void OnConnected()
 	{
-        m_enNetState = EnNetState.Connected;
+        m_State = EnNetState.Connected;
         Debug.Log("NetMgr:OnConnected.." + IsConnected());
         //Globals.It.UIMgr.StopWaiting();
         //Globals.It.LogicMgr.OnServerConnected();
@@ -352,45 +324,31 @@ public class NetMgr : MgrBase
 		{
             MainLoop();
 		}
-        HandleError();
 	}
 
-	private void SendPto(ref Protocol.PtoBase data) 
+	private void Send(ref Protocol.PtoBase data)
 	{
-        switch (m_enNetState)
-        {
-            case EnNetState.Connected:
-                byte[] buffer = m_NetWriter.Process(stPack);
-                if (buffer != null) m_Client.Send(buffer);
-                break;
-            case EnNetState.Connecting:
-                m_WaitSend.Add(stPack);
-                break;
-            case EnNetState.Lost:
-                m_WaitSend.Add(stPack);
-                StartCoroutine("CoConnect");
-                break;
-        }
+        if (m_State != EnNetState.Connected) return;
 	}
 
     IEnumerator CoConnect()
     {
+        m_State = EnNetState.Connecting;
         //Globals.It.UIMgr.StartWaiting();
-        m_enNetState = EnNetState.Connecting;
         ConnectAsync();
         while (true)
         {
             yield return new WaitForSeconds(1.0f);
-            switch (m_enNetState)
+            switch (m_State)
             {
                 case EnNetState.Connected:
                     //Globals.It.UIMgr.StopWaiting();
-                    foreach (NetWriter.CWriteBase stPack in m_WaitSend)
+                    /*foreach (NetWriter.CWriteBase stPack in m_WaitSend)
                     {
                         byte[] buffer = m_NetWriter.Process(stPack);
                         if (buffer != null) m_Client.Send(buffer);
                     }
-                    m_WaitSend.Clear();
+                    m_WaitSend.Clear();*/
                     yield break;
                 case EnNetState.Lost:
                     //Globals.It.UIMgr.StopWaiting();
