@@ -137,7 +137,9 @@
     <Compile Include="Assets\Framework\Loading.cs" />
     <Compile Include="Assets\Framework\MgrBase.cs" />
     <Compile Include="Assets\Framework\NetMgr.cs" />
-    <Compile Include="Assets\Framework\Protocol\Protocol.cs" />
+    <Compile Include="Assets\Framework\Network\Network.cs" />
+    <Compile Include="Assets\Framework\Network\Protocol.cs" />
+    <Compile Include="Assets\Framework\Network\XTcpClient.cs" />
     <Compile Include="Assets\Framework\ResMgr.cs" />
     <Compile Include="Assets\Framework\SoundMgr.cs" />
     <Compile Include="Assets\Framework\UIBase.cs" />
